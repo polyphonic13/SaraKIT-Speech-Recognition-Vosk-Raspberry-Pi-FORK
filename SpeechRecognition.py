@@ -10,6 +10,72 @@ import pyaudio
 import io
 from vosk import Model, KaldiRecognizer
 
+# mqtt
+import paho.mqtt.client as mqtt
+
+MQTT_SECRET_FILE = "../mqtt-secret.json"
+mqttFile = open(MQTT_SECRET_FILE)
+mqttData = json.load(mqttFile)
+
+def onConnect(c, userdata, flags, rc):
+    global client
+    print(
+        "[INFO] Connected with result code "
+        + str(rc)
+        + " is connected = "
+        + str(client.is_connected())
+    )
+    # Subscribing in on_connect() means that if we lose the connection and
+    # reconnect then subscriptions will be renewed.
+    client.subscribe(mqttData["topic"])
+
+def publish(message):
+    print("[INFO] publishing " + message)
+    global client
+    ret = client.publish(mqttData["topic"], message)
+
+def publishTimeout():
+    global isCommandReceived
+    print("[INFO] done with pause; publishing timeout")
+    publish(keywordTimeout)
+    isCommandReceived = False
+
+def publishActivityTimeout():
+    global isKeyPhraseActive, isCommandReceived, keywordTimeout
+    # time.sleep(KEY_PHRASE_TIMEOUT_DURATION)
+    publish(keywordTimeout)
+    isKeyPhraseActive = False
+    isCommandReceived = False
+
+    print("[INFO] listening resumed")
+
+def onPublish(c, userData, result):
+    # print("[INFO] published \n")
+    pass
+
+def onMessage(c, userdata, message):
+    global isAwake, isJustCompletedActivity, isRespondingToGratitude
+    print(
+        "[INFO] mqtt message received: " + message.topic + " : " + str(message.payload)
+    )
+    msg = str(message.payload)
+
+def onDisconnect(c, userData, message):
+    print("[WARNING] mqtt disconnected")
+    client.reconnect()
+
+client = mqtt.Client()  # create new instance
+client.username_pw_set(
+    mqttData["user"], mqttData["password"]
+)  # set username and password
+client.on_connect = onConnect  # attach function to callback
+client.on_message = onMessage  # attach function to callback
+client.on_publish = onPublish
+client.on_disconnect = onDisconnect
+print("[INFO] about to call connect on mqtt client")
+client.connect(mqttData["broker"], port=mqttData["port"])  # connect to broker
+client.loop_start()
+
 # Path to the Vosk model
 #model_path = "models/vosk-model-small-pl-0.22/"
 model_path = "models/vosk-model-small-en-us-0.15/"
