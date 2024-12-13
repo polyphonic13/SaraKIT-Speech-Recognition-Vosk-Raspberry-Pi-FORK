@@ -9,9 +9,54 @@ import contextlib
 import pyaudio
 import io
 from vosk import Model, KaldiRecognizer
+import time
+import threading as th
 
 # mqtt
 import paho.mqtt.client as mqtt
+
+appreciationKeyword = "thank"
+
+isKeyPhraseActive = False
+isCommandReceived = False
+isJustCompletedActivity = False
+isRespondingToGratitude = False
+text = ""
+# sleep for 5 seconds after keyphrase received to prevent listening to jorge's speech during command
+KEY_PHRASE_TIMEOUT_DURATION = 3
+THREAD_TIMER_DURATION = 5
+COMMAND_TIMEOUT_DURATION = 2  # pause after hearing command
+commandPrefix = "spokenCommand: "
+keywordHeard = "keywordHeard"
+keywordTimeout = "keywordTimeout"
+appreciationHeard = "appreciationHeard"
+
+keywordPhrases = [
+    "hey sara",
+    "hey sarah"
+    # "hey george",
+    # "yo george",
+    # "ey george",
+    # "who george",
+    # "he george",
+    # "her george",
+    # "hey jorge",
+    # "ey jorge",
+    # "yo jorge",
+    # "her jorge",
+    # "hey whore hey",
+    # "hey your head",
+    # "hey or hey",
+    # "hey whore her",
+    # "her or her",
+    # "hey or her",
+    # "a jorge",
+    # "ay jorge",
+    # "hurry jorge",
+    # "hey your hey",
+    # "pay more hey",
+    # "hey warhead",
+]
 
 MQTT_SECRET_FILE = "../mqtt-secret.json"
 mqttFile = open(MQTT_SECRET_FILE)
@@ -106,6 +151,54 @@ while True:
         text = result_json.get('text', '')
         if text:
             print("\r" + text, end='\n')
+
+            if not isKeyPhraseActive:
+                print("key phrase not active, isJustCompletedActivity = " + str(isJustCompletedActivity))
+                for kwp in keywordPhrases:
+                    if isJustCompletedActivity:
+                        if appreciationKeyword in text:
+                            if not isRespondingToGratitude:
+                                isRespondingToGratitude = True
+                                publish(appreciationHeard)
+                    elif kwp in text:
+                        print(
+                            "[INFO] keyword phrase found, isCommandReceived = "
+                            + str(isCommandReceived)
+                        )
+                        publish(keywordHeard)
+                        # keyphrase and command received together
+                        l = len(kwp) + 1
+                        if len(text) > l:
+                            # isCommandReceived = True
+                            # isKeyPhraseActive = False
+                            print("[INFO] command received with keyword phrase")
+                            # publish(text[l:])
+                            concat = commandPrefix + text[l:]
+                            text = ""
+                            print(
+                                "[INFO] going to publish "
+                                + concat
+                                + " to topic: "
+                                + mqttData["topic"]
+                                + " is connected = "
+                                + str(client.is_connected())
+                            )
+                            publish(concat)
+                            # time.sleep(KEY_PHRASE_TIMEOUT_DURATION)
+                            timer = th.Timer(
+                                THREAD_TIMER_DURATION, publishTimeout
+                            )
+                            timer.start()
+                        else:
+                            isKeyPhraseActive = True
+
+            elif not isCommandReceived and isKeyPhraseActive:
+                isCommandReceived = True
+                print("[INFO] post pause, publishing " + text)
+                publish(commandPrefix + text)
+                timer = th.Timer(THREAD_TIMER_DURATION, publishActivityTimeout)
+                timer.start()
+
     else:
         partial_json = json.loads(recognizer.PartialResult())
         partial = partial_json.get('partial', '')
