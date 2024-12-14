@@ -1,0 +1,14 @@
+[Unit]
+Description=SaraKIT Speech Recognition
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/scripts/SaraKITSpeechRecognition/
+ExecStart=python SpeechRecognition.py
+RestartForceExitStatus=100
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
