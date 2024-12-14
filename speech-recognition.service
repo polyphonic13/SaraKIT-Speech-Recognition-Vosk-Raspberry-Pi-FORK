@@ -5,7 +5,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/scripts/SaraKITSpeechRecognition/
-ExecStart=python SpeechRecognition.py
+ExecStart=/usr/bin/python3 SpeechRecognition.py
 RestartForceExitStatus=100
 Restart=on-failure
 RestartSec=5s
