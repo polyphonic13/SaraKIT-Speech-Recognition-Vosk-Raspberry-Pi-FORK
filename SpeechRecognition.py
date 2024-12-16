@@ -11,11 +11,14 @@ import io
 from vosk import Model, KaldiRecognizer
 import time
 import threading as th
-
-# mqtt
+import RPi.GPIO as GPIO
 import paho.mqtt.client as mqtt
 
-appreciationKeyword = "thank"
+appreciationKeywords = [
+    "thank",
+    "thanks",
+    "gracias"
+]
 
 isKeyPhraseActive = False
 isCommandReceived = False
@@ -30,6 +33,13 @@ commandPrefix = "spokenCommand: "
 keywordHeard = "keywordHeard"
 keywordTimeout = "keywordTimeout"
 appreciationHeard = "appreciationHeard"
+
+#region LED
+LED_PIN = 6
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+GPIO.setup(LED_PIN, GPIO.OUT)
+#endregion
 
 keywordPhrases = [
     # "hey sam",
@@ -58,6 +68,7 @@ keywordPhrases = [
     "hey warhead",
 ]
 
+#region mqtt
 MQTT_SECRET_FILE = "../mqtt-secret.json"
 mqttFile = open(MQTT_SECRET_FILE)
 mqttData = json.load(mqttFile)
@@ -70,6 +81,8 @@ def onConnect(c, userdata, flags, rc):
         + " is connected = "
         + str(client.is_connected())
     )
+    GPIO.output(LED_PIN, GPIO.HIGH)
+
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe(mqttData["topic"])
@@ -107,6 +120,7 @@ def onMessage(c, userdata, message):
 
 def onDisconnect(c, userData, message):
     print("[WARNING] mqtt disconnected")
+    GPIO.output(LED_PIN, GPIO.LOW)
     client.reconnect()
 
 client = mqtt.Client()  # create new instance
@@ -120,6 +134,7 @@ client.on_disconnect = onDisconnect
 print("[INFO] about to call connect on mqtt client")
 client.connect(mqttData["broker"], port=mqttData["port"])  # connect to broker
 client.loop_start()
+#endregion
 
 # Path to the Vosk model
 #model_path = "models/vosk-model-small-pl-0.22/"
@@ -156,10 +171,12 @@ while True:
                 print("key phrase not active, isJustCompletedActivity = " + str(isJustCompletedActivity))
                 for kwp in keywordPhrases:
                     if isJustCompletedActivity:
-                        if appreciationKeyword in text:
-                            if not isRespondingToGratitude:
-                                isRespondingToGratitude = True
-                                publish(appreciationHeard)
+                        for aws in appreciationKeywords:
+                            if aws in text:
+                                if not isRespondingToGratitude:
+                                    isRespondingToGratitude = True
+                                    print("about to publish appreciationHeard message")
+                                    publish(appreciationHeard)
                     elif kwp in text:
                         print(
                             "[INFO] keyword phrase found, isCommandReceived = "
