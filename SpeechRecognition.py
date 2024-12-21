@@ -85,12 +85,12 @@ def onConnect(c, userdata, flags, rc):
 
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
-    client.subscribe(mqttData["topic"])
+    client.subscribe(mqttData["incomingTopic"])
 
 def publish(message):
     print("[INFO] publishing " + message)
     global client
-    ret = client.publish(mqttData["topic"], message)
+    ret = client.publish(mqttData["outgoingTopic"], message)
 
 def publishTimeout():
     global isCommandReceived
@@ -113,10 +113,16 @@ def onPublish(c, userData, result):
 
 def onMessage(c, userdata, message):
     global isAwake, isJustCompletedActivity, isRespondingToGratitude
-    print(
-        "[INFO] mqtt message received: " + message.topic + " : " + str(message.payload)
-    )
+    print("[INFO] mqtt message received: " + message.topic + " : " + str(message.payload))
     msg = str(message.payload)
+    if "speechEnded" in msg:
+        print("[INFO] speechEnded received, about to call setIdle")
+        if isRespondingToGratitude:
+            isRespondingToGratitude = False
+        else:
+            isJustCompletedActivity = True
+            timer = th.Timer(THREAD_TIMER_DURATION * 2, setIsJustCompletedActivityFalse)
+            timer.start()
 
 def onDisconnect(c, userData, message):
     print("[WARNING] mqtt disconnected")
@@ -135,6 +141,11 @@ print("[INFO] about to call connect on mqtt client")
 client.connect(mqttData["broker"], port=mqttData["port"])  # connect to broker
 client.loop_start()
 #endregion
+
+def setIsJustCompletedActivityFalse():
+    global isJustCompletedActivity
+    print("[INFO] setting isJustCompletedActivity to False")
+    isJustCompletedActivity = False
 
 # Path to the Vosk model
 #model_path = "models/vosk-model-small-pl-0.22/"
@@ -196,7 +207,7 @@ while True:
                                 "[INFO] going to publish "
                                 + concat
                                 + " to topic: "
-                                + mqttData["topic"]
+                                + mqttData["outgoingTopic"]
                                 + " is connected = "
                                 + str(client.is_connected())
                             )
