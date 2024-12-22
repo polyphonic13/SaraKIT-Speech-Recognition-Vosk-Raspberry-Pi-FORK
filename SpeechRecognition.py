@@ -2,6 +2,7 @@
 # sudo apt-get install -y python3-pyaudio
 # sudo pip3 install vosk
 
+import argparse
 import os
 import sys
 import json
@@ -42,8 +43,6 @@ GPIO.setup(LED_PIN, GPIO.OUT)
 #endregion
 
 keywordPhrases = [
-    # "hey sam",
-    # "hey sarah"
     "hey george",
     "yo george",
     "ey george",
@@ -100,7 +99,6 @@ def publishTimeout():
 
 def publishActivityTimeout():
     global isKeyPhraseActive, isCommandReceived, keywordTimeout
-    # time.sleep(KEY_PHRASE_TIMEOUT_DURATION)
     publish(keywordTimeout)
     isKeyPhraseActive = False
     isCommandReceived = False
@@ -148,7 +146,6 @@ def setIsJustCompletedActivityFalse():
     isJustCompletedActivity = False
 
 # Path to the Vosk model
-#model_path = "models/vosk-model-small-pl-0.22/"
 model_path = "models/vosk-model-small-en-us-0.15/"
 if not os.path.exists(model_path):
     print(f"Model '{model_path}' was not found. Please check the path.")
@@ -170,65 +167,82 @@ recognizer = KaldiRecognizer(model, sample_rate)
 os.system('clear')
 print("\nSpeak now...")
 
-while True:
-    data = stream.read(chunk_size)
-    if recognizer.AcceptWaveform(data):
-        result_json = json.loads(recognizer.Result())
-        text = result_json.get('text', '')
-        if text:
-            print("\r" + text, end='\n')
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument(
+    "-l",
+    "--list-devices",
+    action="store_true",
+    help="show list of audio devices and exit",
+)
 
-            if not isKeyPhraseActive:
-                print("key phrase not active, isJustCompletedActivity = " + str(isJustCompletedActivity))
-                for kwp in keywordPhrases:
-                    if isJustCompletedActivity:
-                        for aws in appreciationKeywords:
-                            if aws in text:
-                                if not isRespondingToGratitude:
-                                    isRespondingToGratitude = True
-                                    print("about to publish appreciationHeard message")
-                                    publish(appreciationHeard)
-                    elif kwp in text:
-                        print(
-                            "[INFO] keyword phrase found, isCommandReceived = "
-                            + str(isCommandReceived)
-                        )
-                        publish(keywordHeard)
-                        # keyphrase and command received together
-                        l = len(kwp) + 1
-                        if len(text) > l:
-                            # isCommandReceived = True
-                            # isKeyPhraseActive = False
-                            print("[INFO] command received with keyword phrase")
-                            # publish(text[l:])
-                            concat = commandPrefix + text[l:]
-                            text = ""
+try:
+    while True:
+        data = stream.read(chunk_size)
+        if recognizer.AcceptWaveform(data):
+            result_json = json.loads(recognizer.Result())
+            text = result_json.get('text', '')
+            if text:
+                print("\r" + text, end='\n')
+
+                if not isKeyPhraseActive:
+                    print("key phrase not active, isJustCompletedActivity = " + str(isJustCompletedActivity))
+                    for kwp in keywordPhrases:
+                        if isJustCompletedActivity:
+                            for aws in appreciationKeywords:
+                                if aws in text:
+                                    if not isRespondingToGratitude:
+                                        isRespondingToGratitude = True
+                                        print("about to publish appreciationHeard message")
+                                        publish(appreciationHeard)
+                        elif kwp in text:
                             print(
-                                "[INFO] going to publish "
-                                + concat
-                                + " to topic: "
-                                + mqttData["outgoingTopic"]
-                                + " is connected = "
-                                + str(client.is_connected())
+                                "[INFO] keyword phrase found, isCommandReceived = "
+                                + str(isCommandReceived)
                             )
-                            publish(concat)
-                            # time.sleep(KEY_PHRASE_TIMEOUT_DURATION)
-                            timer = th.Timer(
-                                THREAD_TIMER_DURATION, publishTimeout
-                            )
-                            timer.start()
-                        else:
-                            isKeyPhraseActive = True
+                            publish(keywordHeard)
+                            # keyphrase and command received together
+                            l = len(kwp) + 1
+                            if len(text) > l:
+                                # isCommandReceived = True
+                                # isKeyPhraseActive = False
+                                print("[INFO] command received with keyword phrase")
+                                # publish(text[l:])
+                                concat = commandPrefix + text[l:]
+                                text = ""
+                                print(
+                                    "[INFO] going to publish "
+                                    + concat
+                                    + " to topic: "
+                                    + mqttData["outgoingTopic"]
+                                    + " is connected = "
+                                    + str(client.is_connected())
+                                )
+                                publish(concat)
+                                # time.sleep(KEY_PHRASE_TIMEOUT_DURATION)
+                                timer = th.Timer(
+                                    THREAD_TIMER_DURATION, publishTimeout
+                                )
+                                timer.start()
+                            else:
+                                isKeyPhraseActive = True
 
-            elif not isCommandReceived and isKeyPhraseActive:
-                isCommandReceived = True
-                print("[INFO] post pause, publishing " + text)
-                publish(commandPrefix + text)
-                timer = th.Timer(THREAD_TIMER_DURATION, publishActivityTimeout)
-                timer.start()
+                elif not isCommandReceived and isKeyPhraseActive:
+                    isCommandReceived = True
+                    print("[INFO] post pause, publishing " + text)
+                    publish(commandPrefix + text)
+                    timer = th.Timer(THREAD_TIMER_DURATION, publishActivityTimeout)
+                    timer.start()
 
-    else:
-        partial_json = json.loads(recognizer.PartialResult())
-        partial = partial_json.get('partial', '')
-        sys.stdout.write('\r' + partial)
-        sys.stdout.flush()
+        else:
+            partial_json = json.loads(recognizer.PartialResult())
+            partial = partial_json.get('partial', '')
+            sys.stdout.write('\r' + partial)
+            sys.stdout.flush()
+
+except KeyboardInterrupt:
+    client.loop_stop()
+    print("\nDone")
+    parser.exit(0)
+except Exception as e:
+    client.loop_stop()
+    parser.exit(type(e).__name__ + ": " + str(e))
