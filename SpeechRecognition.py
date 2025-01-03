@@ -15,32 +15,31 @@ import threading as th
 import RPi.GPIO as GPIO
 import paho.mqtt.client as mqtt
 
-appreciationKeywords = [
-    "thank",
-    "thanks",
-    "gracias"
-]
+appreciationKeywords = ["thank", "thanks", "gracias"]
 
 isKeyPhraseActive = False
 isCommandReceived = False
 isJustCompletedActivity = False
 isRespondingToGratitude = False
+isPromptStateActive = False
 text = ""
-# sleep for 5 seconds after keyphrase received to prevent listening to jorge's speech during command
+# sleep for 3 seconds after keyphrase received to prevent listening to jorge's speech during command
 KEY_PHRASE_TIMEOUT_DURATION = 3
 THREAD_TIMER_DURATION = 5
-COMMAND_TIMEOUT_DURATION = 2  # pause after hearing command
-commandPrefix = "spokenCommand: "
-keywordHeard = "keywordHeard"
-keywordTimeout = "keywordTimeout"
-appreciationHeard = "appreciationHeard"
+# pause after hearing command
+COMMAND_TIMEOUT_DURATION = 2
+COMMAND_PREFIX = "spokenCommand: "
+KEYWORD_HEARD = "keywordHeard"
+KEYWORD_TIMEOUT = "keywordTimeout"
+APPRECIATION_HEARD = "appreciationHeard"
+PROMPT_STATE_TIMEOUT = "promptStateTimeout"
 
-#region LED
+# region LED
 LED_PIN = 6
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 GPIO.setup(LED_PIN, GPIO.OUT)
-#endregion
+# endregion
 
 keywordPhrases = [
     "hey george",
@@ -67,10 +66,11 @@ keywordPhrases = [
     "hey warhead",
 ]
 
-#region mqtt
+# region mqtt
 MQTT_SECRET_FILE = "../mqtt-secret.json"
 mqttFile = open(MQTT_SECRET_FILE)
 mqttData = json.load(mqttFile)
+
 
 def onConnect(c, userdata, flags, rc):
     global client
@@ -86,32 +86,39 @@ def onConnect(c, userdata, flags, rc):
     # reconnect then subscriptions will be renewed.
     client.subscribe(mqttData["incomingTopic"])
 
+
 def publish(message):
     print("[INFO] publishing " + message)
     global client
     ret = client.publish(mqttData["outgoingTopic"], message)
 
+
 def publishTimeout():
     global isCommandReceived
     print("[INFO] done with pause; publishing timeout")
-    publish(keywordTimeout)
+    publish(KEYWORD_TIMEOUT)
     isCommandReceived = False
 
+
 def publishActivityTimeout():
-    global isKeyPhraseActive, isCommandReceived, keywordTimeout
-    publish(keywordTimeout)
+    global isKeyPhraseActive, isCommandReceived, KEYWORD_TIMEOUT
+    publish(KEYWORD_TIMEOUT)
     isKeyPhraseActive = False
     isCommandReceived = False
 
     print("[INFO] listening resumed")
 
+
 def onPublish(c, userData, result):
     # print("[INFO] published \n")
     pass
 
+
 def onMessage(c, userdata, message):
-    global isAwake, isJustCompletedActivity, isRespondingToGratitude
-    print("[INFO] mqtt message received: " + message.topic + " : " + str(message.payload))
+    global isAwake, isJustCompletedActivity, isRespondingToGratitude, isPromptStateActive
+    print(
+        "[INFO] mqtt message received: " + message.topic + " : " + str(message.payload)
+    )
     msg = str(message.payload)
     if "speechEnded" in msg or "activityCompleted" in msg:
         print("[INFO] speechEnded received, about to call setIdle")
@@ -121,11 +128,19 @@ def onMessage(c, userdata, message):
             isJustCompletedActivity = True
             timer = th.Timer(THREAD_TIMER_DURATION * 2, setIsJustCompletedActivityFalse)
             timer.start()
+    elif "setPromptStateActive" in msg:
+        print("[INFO] promptActive received, about to call setIsInPromptState")
+        isPromptStateActive = True
+        # give user 5 seconds to respond
+        timer = th.Timer(THREAD_TIMER_DURATION, setIsPromptActiveFalse)
+        timer.start()
+
 
 def onDisconnect(c, userData, message):
     print("[WARNING] mqtt disconnected")
     GPIO.output(LED_PIN, GPIO.LOW)
     client.reconnect()
+
 
 client = mqtt.Client()  # create new instance
 client.username_pw_set(
@@ -138,12 +153,20 @@ client.on_disconnect = onDisconnect
 print("[INFO] about to call connect on mqtt client")
 client.connect(mqttData["broker"], port=mqttData["port"])  # connect to broker
 client.loop_start()
-#endregion
+# endregion
+
 
 def setIsJustCompletedActivityFalse():
     global isJustCompletedActivity
     print("[INFO] setting isJustCompletedActivity to False")
     isJustCompletedActivity = False
+
+
+def setIsPromptActiveFalse():
+    global isPromptStateActive
+    isPromptStateActive = False
+    publish(PROMPT_STATE_TIMEOUT)
+
 
 # Path to the Vosk model
 model_path = "models/vosk-model-small-en-us-0.15/"
@@ -161,10 +184,16 @@ channels = 1
 
 # Initialization of PyAudio and speech recognition
 p = pyaudio.PyAudio()
-stream = p.open(format=format, channels=channels, rate=sample_rate, input=True, frames_per_buffer=chunk_size)
+stream = p.open(
+    format=format,
+    channels=channels,
+    rate=sample_rate,
+    input=True,
+    frames_per_buffer=chunk_size,
+)
 recognizer = KaldiRecognizer(model, sample_rate)
 
-os.system('clear')
+os.system("clear")
 print("\nSpeak now...")
 
 parser = argparse.ArgumentParser(add_help=False)
@@ -180,26 +209,33 @@ try:
         data = stream.read(chunk_size)
         if recognizer.AcceptWaveform(data):
             result_json = json.loads(recognizer.Result())
-            text = result_json.get('text', '')
+            text = result_json.get("text", "")
             if text:
-                print("\r" + text, end='\n')
-
-                if not isKeyPhraseActive:
-                    print("key phrase not active, isJustCompletedActivity = " + str(isJustCompletedActivity))
+                print("\r" + text, end="\n")
+                if isPromptStateActive:
+                    publish(text)
+                    isPromptStateActive = False
+                elif not isKeyPhraseActive:
+                    print(
+                        "key phrase not active, isJustCompletedActivity = "
+                        + str(isJustCompletedActivity)
+                    )
                     for kwp in keywordPhrases:
                         if isJustCompletedActivity:
                             for aws in appreciationKeywords:
                                 if aws in text:
                                     if not isRespondingToGratitude:
                                         isRespondingToGratitude = True
-                                        print("about to publish appreciationHeard message")
-                                        publish(appreciationHeard)
+                                        print(
+                                            "about to publish APPRECIATION_HEARD message"
+                                        )
+                                        publish(APPRECIATION_HEARD)
                         elif kwp in text:
                             print(
                                 "[INFO] keyword phrase found, isCommandReceived = "
                                 + str(isCommandReceived)
                             )
-                            publish(keywordHeard)
+                            publish(KEYWORD_HEARD)
                             # keyphrase and command received together
                             l = len(kwp) + 1
                             if len(text) > l:
@@ -207,7 +243,7 @@ try:
                                 # isKeyPhraseActive = False
                                 print("[INFO] command received with keyword phrase")
                                 # publish(text[l:])
-                                concat = commandPrefix + text[l:]
+                                concat = COMMAND_PREFIX + text[l:]
                                 text = ""
                                 print(
                                     "[INFO] going to publish "
@@ -219,9 +255,7 @@ try:
                                 )
                                 publish(concat)
                                 # time.sleep(KEY_PHRASE_TIMEOUT_DURATION)
-                                timer = th.Timer(
-                                    THREAD_TIMER_DURATION, publishTimeout
-                                )
+                                timer = th.Timer(THREAD_TIMER_DURATION, publishTimeout)
                                 timer.start()
                             else:
                                 isKeyPhraseActive = True
@@ -229,14 +263,14 @@ try:
                 elif not isCommandReceived and isKeyPhraseActive:
                     isCommandReceived = True
                     print("[INFO] post pause, publishing " + text)
-                    publish(commandPrefix + text)
+                    publish(COMMAND_PREFIX + text)
                     timer = th.Timer(THREAD_TIMER_DURATION, publishActivityTimeout)
                     timer.start()
 
         else:
             partial_json = json.loads(recognizer.PartialResult())
-            partial = partial_json.get('partial', '')
-            sys.stdout.write('\r' + partial)
+            partial = partial_json.get("partial", "")
+            sys.stdout.write("\r" + partial)
             sys.stdout.flush()
 
 except KeyboardInterrupt:
