@@ -120,7 +120,10 @@ def onMessage(c, userdata, message):
         "[INFO] mqtt message received: " + message.topic + " : " + str(message.payload)
     )
     msg = str(message.payload)
-    if "speechEnded" in msg or "activityCompleted" in msg:
+    if "commandFailed" in msg:
+        print("[INFO] commandFailed received")
+        isJustCompletedActivity = False
+    elif "speechEnded" in msg or "activityCompleted" in msg:
         print("[INFO] speechEnded received, about to call setIdle")
         if isRespondingToGratitude:
             isRespondingToGratitude = False
