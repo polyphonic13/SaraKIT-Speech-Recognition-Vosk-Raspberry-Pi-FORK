@@ -134,8 +134,8 @@ def onMessage(c, userdata, message):
     elif "setPromptStateActive" in msg:
         print("[INFO] promptActive received, about to call setIsInPromptState")
         isPromptStateActive = True
-        # give user 5 seconds to respond
-        timer = th.Timer(THREAD_TIMER_DURATION, setIsPromptActiveFalse)
+        # give user 15 seconds to respond
+        timer = th.Timer(THREAD_TIMER_DURATION * 3, setIsPromptActiveFalse)
         timer.start()
 
 
