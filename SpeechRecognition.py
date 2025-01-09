@@ -125,7 +125,9 @@ def onMessage(c, userdata, message):
         isJustCompletedActivity = False
     elif "speechEnded" in msg or "activityCompleted" in msg:
         print("[INFO] speechEnded received, about to call setIdle")
-        if isRespondingToGratitude:
+        if isPromptStateActive:
+            print("[INFO] prompt state still active")
+        elif isRespondingToGratitude:
             isRespondingToGratitude = False
         else:
             isJustCompletedActivity = True
@@ -216,7 +218,8 @@ try:
             if text:
                 print("\r" + text, end="\n")
                 if isPromptStateActive:
-                    publish(text)
+                    concat = COMMAND_PREFIX + text[l:]
+                    publish(concat)
                     isPromptStateActive = False
                 elif not isKeyPhraseActive:
                     print(
