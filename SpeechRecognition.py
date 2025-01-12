@@ -17,6 +17,7 @@ import paho.mqtt.client as mqtt
 
 appreciationKeywords = ["thank", "thanks", "gracias"]
 
+isMQTTConnected = False
 isKeyPhraseActive = False
 isCommandReceived = False
 isJustCompletedActivity = False
@@ -73,7 +74,7 @@ mqttData = json.load(mqttFile)
 
 
 def onConnect(c, userdata, flags, rc):
-    global client
+    global client, isMQTTConnected
     print(
         "[INFO] Connected with result code "
         + str(rc)
@@ -81,7 +82,7 @@ def onConnect(c, userdata, flags, rc):
         + str(client.is_connected())
     )
     GPIO.output(LED_PIN, GPIO.HIGH)
-
+    isMQTTConnected = True
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe(mqttData["incomingTopic"])
@@ -139,11 +140,17 @@ def onMessage(c, userdata, message):
         # give user 15 seconds to respond
         timer = th.Timer(THREAD_TIMER_DURATION * 3, setIsPromptActiveFalse)
         timer.start()
+    elif "beginNightMode" in msg:
+        GPIO.output(LED_PIN, GPIO.LOW)
+    elif "endNightMode" in msg:
+        if isMQTTConnected:
+            GPIO.output(LED_PIN, GPIO.HIGH)
 
 
 def onDisconnect(c, userData, message):
     print("[WARNING] mqtt disconnected")
     GPIO.output(LED_PIN, GPIO.LOW)
+    isMQTTConnected = False
     client.reconnect()
 
 
