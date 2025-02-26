@@ -41,6 +41,9 @@ LED_PIN = 6
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 GPIO.setup(LED_PIN, GPIO.OUT)
+# testing
+GPIO.output(LED_PIN, GPIO.HIGH)
+
 # endregion
 
 keywordPhrases = [
@@ -84,7 +87,8 @@ def onConnect(c, userdata, flags, rc):
     )
     isMQTTConnected = True
     if not isNightModeActive:
-        GPIO.output(LED_PIN, GPIO.HIGH)
+        print("[INFO] publishing isNightModeActive = False")
+        # GPIO.output(LED_PIN, GPIO.HIGH)
     # Subscribing in on_connect() means that if we lose the connection and
     # reconnect then subscriptions will be renewed.
     client.subscribe(mqttData["incomingTopic"])
@@ -153,7 +157,7 @@ def onMessage(c, userdata, message):
 
 def onDisconnect(c, userData, message):
     print("[WARNING] mqtt disconnected")
-    GPIO.output(LED_PIN, GPIO.LOW)
+    # GPIO.output(LED_PIN, GPIO.LOW)
     isMQTTConnected = False
     client.reconnect()
 
