@@ -152,7 +152,7 @@ def onMessage(c, userdata, message):
     elif "endNightMode" in msg:
         isNightModeActive = False
         if isMQTTConnected:
-            GPIO.output(LED_PIN, GPIO.HIGH)
+            # GPIO.output(LED_PIN, GPIO.HIGH)
 
 
 def onDisconnect(c, userData, message):
